@@ -327,6 +327,12 @@ namespace Hl7.Fhir.DemoFileSystemFhirServer
                 var allergies = await Search("AllergyIntolerance", paramv, null, SummaryType.False, null);
                 allergies.Entry.ForEach(x => { ((AllergyIntolerance)x.Resource).Recorder = null; ((AllergyIntolerance)x.Resource).Asserter = null; });
 
+                paramv = new List<KeyValuePair<string, string>>();
+                paramv.Add(new KeyValuePair<string, string>("patient", id));
+                var medications = await Search("MedicationRequest", paramv, null, SummaryType.False, null);
+                medications.Entry.ForEach(x => { ((MedicationRequest)x.Resource).Recorder = null; });
+
+
                 Bundle b = new Bundle()
                 {
                     Id = System.Guid.NewGuid().ToString(),
@@ -350,6 +356,14 @@ namespace Hl7.Fhir.DemoFileSystemFhirServer
 
                 };
 
+                var medications_section = new Composition.SectionComponent()
+                {
+                    Title = "Medication Summary section",
+                    Code = new CodeableConcept("10160-0", "http://loinc.org"),
+                    Entry = medications.Entry.Select(x => new ResourceReference() { Reference = "MedicationRequest/" + x.Resource.Id }).ToList()
+
+                };
+
                 Composition c = new Composition()
                 {
                     Id = System.Guid.NewGuid().ToString(),
@@ -368,15 +382,26 @@ namespace Hl7.Fhir.DemoFileSystemFhirServer
                         }
                     },
                     Section = new List<Composition.SectionComponent>() {
-                        problems_section,
-                        allergies_section,
+                       
                     }
           
                 };
+
+
+                if (problems.Entry.Any())
+                    c.Section.Add(problems_section);
+
+                if (allergies.Entry.Any())
+                    c.Section.Add(allergies_section);
+
+                if (medications.Entry.Any())
+                    c.Section.Add(medications_section);
+                
                 b.Entry.Add(new Bundle.EntryComponent() { FullUrl="uuid:" + c.Id, Resource =  c });
                 b.Entry.Add(new Bundle.EntryComponent() { Resource =  patient });
                 b.Entry.AddRange(problems.Entry);
                 b.Entry.AddRange(allergies.Entry);
+                b.Entry.AddRange(medications.Entry);
 
                 return b;
             }
