@@ -68,6 +68,8 @@ namespace Hl7.Fhir.WebApi
                             request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(ContentType.XML_CONTENT_HEADER));
                     }
                 }
+                // HACK request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(ContentType.JSON_CONTENT_HEADER));
+
             }
             return await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
         }

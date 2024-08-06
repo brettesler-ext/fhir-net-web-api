@@ -45,6 +45,9 @@ namespace Hl7.Fhir.WebApi
                         headers.Remove("X-Correlation-Id");
                     headers.Add("X-Correlation-Id", _inputs.X_CorelationId);
                 }
+                // hack
+                headers.Add("Access-Control-Allow-Origin", "*");
+                headers.Add("Access-Control-Allow-Methods", "OPTIONS, POST, GET, PUT, DELETE");
             }
             if (entry != null)
             {

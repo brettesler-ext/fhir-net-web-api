@@ -266,6 +266,7 @@ namespace Hl7.Fhir.DemoFileSystemFhirServer
                 });
                 return result;
             }
+          
             if (operation == "preferred-id")
             {
                 // Test operation that isn't really anything just for a specific unit test
@@ -308,6 +309,76 @@ namespace Hl7.Fhir.DemoFileSystemFhirServer
                     Details = new CodeableConcept() { Text = $"Send an activation code to {ResourceName}/{id}" }
                 });
                 return outcome;
+            }
+            if (operation == "summary")
+            {
+                var patient = await Get(id, null, SummaryType.False);
+
+                List<KeyValuePair<string, string>> paramv = new List<KeyValuePair<string, string>>();
+                paramv.Add(new KeyValuePair<string, string>("patient", id));
+                paramv.Add(new KeyValuePair<string, string>("category", "problem-list-item"));
+
+                var problems = await Search("Condition", paramv, null, SummaryType.False, null);
+                problems.Entry.ForEach(x => { ((Condition)x.Resource).Recorder = null; ((Condition)x.Resource).Asserter = null; } );
+
+
+                paramv = new List<KeyValuePair<string, string>>();
+                paramv.Add(new KeyValuePair<string, string>("patient", id));
+                var allergies = await Search("AllergyIntolerance", paramv, null, SummaryType.False, null);
+                allergies.Entry.ForEach(x => { ((AllergyIntolerance)x.Resource).Recorder = null; ((AllergyIntolerance)x.Resource).Asserter = null; });
+
+                Bundle b = new Bundle()
+                {
+                    Id = System.Guid.NewGuid().ToString(),
+                };
+
+                var problems_section = new Composition.SectionComponent()
+                {
+                    Title = "Active Problems",
+                    Code = new CodeableConcept("11450-4", "http://loinc.org"),
+                    Entry = problems.Entry.Select(x => new ResourceReference() { Reference = "Condition/" + x.Resource.Id }).ToList()
+
+                };
+
+                
+
+                var allergies_section = new Composition.SectionComponent()
+                {
+                    Title = "Allergies and Intolerances",
+                    Code = new CodeableConcept("48765-2", "http://loinc.org"),
+                    Entry = allergies.Entry.Select(x => new ResourceReference() { Reference = "AllergyIntolerance/" + x.Resource.Id }).ToList()
+
+                };
+
+                Composition c = new Composition()
+                {
+                    Id = System.Guid.NewGuid().ToString(),
+                    Type = new CodeableConcept("60591-5", "http://loinc.org"), 
+                    Status = CompositionStatus.Final,
+                    Text = new Narrative("<p>AUPS</p>"),
+                    DateElement =  new FhirDateTime(DateTimeOffset.Now),
+                    Title = "AU Patient Summary",
+                    Attester = new List<Composition.AttesterComponent>()
+                    {
+                        new Composition.AttesterComponent()
+                        {
+                            Mode = Composition.CompositionAttestationMode.Personal,
+                            TimeElement = new FhirDateTime(DateTimeOffset.Now),
+                            Party = new ResourceReference("Patient/" + patient.Id)
+                        }
+                    },
+                    Section = new List<Composition.SectionComponent>() {
+                        problems_section,
+                        allergies_section,
+                    }
+          
+                };
+                b.Entry.Add(new Bundle.EntryComponent() { FullUrl="uuid:" + c.Id, Resource =  c });
+                b.Entry.Add(new Bundle.EntryComponent() { Resource =  patient });
+                b.Entry.AddRange(problems.Entry);
+                b.Entry.AddRange(allergies.Entry);
+
+                return b;
             }
             throw new NotImplementedException();
         }
@@ -423,6 +494,119 @@ namespace Hl7.Fhir.DemoFileSystemFhirServer
                 });
             }
             return outcome;
+        }
+
+        virtual public Task<Bundle> Search(string xResourceName, IEnumerable<KeyValuePair<string, string>> parameters, int? Count, SummaryType summary, string sortby)
+        {
+            // This is a Brute force search implementation - just scan all the files
+            Bundle resource = new Bundle();
+            if (resource.Meta == null)
+                resource.Meta = new Meta();
+            resource.Meta.LastUpdated = DateTime.Now;
+            resource.Id = new Uri("urn:uuid:" + Guid.NewGuid().ToFhirId()).OriginalString;
+            resource.Type = Bundle.BundleType.Searchset;
+            resource.ResourceBase = RequestDetails.BaseUri;
+
+            Dictionary<string, Resource> entries = new Dictionary<string, Resource>();
+            string filter = $"{xResourceName}.*..xml";
+            IEnumerable<string> filenames = null;
+            var idparam = parameters.Where(kp => kp.Key == "_id");
+            List<string> usedParameters = new List<string>();
+            bool elementsFilterActive = false;
+            if (idparam.Any())
+            {
+                // Even though this is a trashy demo app, don't permit walking the file system
+                filter = $"{xResourceName}.{idparam.First().Value.Replace("/", "")}.*.xml";
+                filenames = Directory.EnumerateFiles(ResourceDirectory, filter);
+                usedParameters.Add("_id");
+            }
+            foreach (var p in parameters)
+            {
+                if (p.Key == "_elements")
+                {
+                    usedParameters.Add(p.Key);
+                    resource.SetAnnotation(new FilterOutputToElements(p.Value));
+                    elementsFilterActive = true;
+                    continue;
+                }
+                var r = Indexer.Search(xResourceName, p.Key, p.Value);
+                if (r != null)
+                {
+                    if (filenames == null)
+                        filenames = r;
+                    else
+                        filenames = filenames.Intersect(r);
+                    usedParameters.Add(p.Key);
+                }
+            }
+            if (filenames == null)
+                filenames = Directory.EnumerateFiles(ResourceDirectory, filter);
+            foreach (var filename in filenames)
+            {
+                if (!filename.EndsWith("..xml")) // skip over the version history items
+                    continue;
+                if (File.Exists(filename))
+                {
+                    using (FileStream stream = new FileStream(filename, FileMode.Open, FileAccess.Read, FileShare.Read))
+                    {
+                        var xr = Hl7.Fhir.Utility.SerializationUtil.XmlReaderFromStream(stream);
+                        var resourceEntry = _parser.Parse<Resource>(xr);
+                        if (entries.ContainsKey(resourceEntry.Id))
+                        {
+                            if (String.Compare(entries[resourceEntry.Id].Meta.VersionId, resourceEntry.Meta.VersionId) < 0)
+                                entries[resource.Id] = resourceEntry;
+                        }
+                        else
+                            entries.Add(resourceEntry.Id, resourceEntry);
+                    }
+                }
+                else
+                {
+                    System.Diagnostics.Trace.WriteLine($"Search data out of date for file likely deleted file: {filename}");
+                }
+            }
+            foreach (var item in entries.Values)
+            {
+                resource.AddResourceEntry(item,
+                    ResourceIdentity.Build(RequestDetails.BaseUri,
+                        item.TypeName,
+                        item.Id,
+                        item.Meta?.VersionId).OriginalString).Search = new Bundle.SearchComponent()
+                        {
+                            Mode = Bundle.SearchEntryMode.Match
+                        };
+                if (elementsFilterActive)
+                {
+                    // Add in the Meta Tag that indicates that this resource is only a partial
+                    if (item.Meta == null) item.Meta = new Meta();
+                    if (!item.Meta.Tag.Any(c => c.System == ResourceExtensions.SubsettedSystem && c.Code == "SUBSETTED"))
+                        item.Meta.Tag.Add(new Coding(ResourceExtensions.SubsettedSystem, "SUBSETTED"));
+                }
+            }
+
+            resource.Total = resource.Entry.Count(e => e.Search.Mode == Bundle.SearchEntryMode.Match);
+            if (Count.HasValue)
+                resource.Entry = resource.Entry.Take(Count.Value).ToList();
+            if (parameters.Count(p => p.Key != "_id" && !usedParameters.Contains(p.Key)) > 0)
+            {
+                var outcome = new OperationOutcome();
+                outcome.Issue.Add(new OperationOutcome.IssueComponent()
+                {
+                    Severity = OperationOutcome.IssueSeverity.Warning,
+                    Code = OperationOutcome.IssueType.NotSupported,
+                    Details = new CodeableConcept() { Text = $"Unsupported search parameters used: {String.Join("&", parameters.Where(p => p.Key != "_id" && !usedParameters.Contains(p.Key)).Select(k => k.Key + "=" + k.Value))}" }
+                });
+                resource.AddResourceEntry(outcome,
+                    new Uri("urn:uuid:" + Guid.NewGuid().ToFhirId()).OriginalString).Search = new Bundle.SearchComponent()
+                    {
+                        Mode = Bundle.SearchEntryMode.Outcome
+                    };
+            }
+
+            // Add in the navigation links
+            resource.SelfLink = RequestDetails.RequestUri;
+
+            return System.Threading.Tasks.Task.FromResult(resource);
         }
 
         virtual public Task<Bundle> Search(IEnumerable<KeyValuePair<string, string>> parameters, int? Count, SummaryType summary, string sortby)
