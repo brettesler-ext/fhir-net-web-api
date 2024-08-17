@@ -319,27 +319,27 @@ namespace Hl7.Fhir.DemoFileSystemFhirServer
                 paramv.Add(new KeyValuePair<string, string>("category", "problem-list-item"));
 
                 var problems = await Search("Condition", paramv, null, SummaryType.False, null);
-                problems.Entry.ForEach(x => { ((Condition)x.Resource).Recorder = null; ((Condition)x.Resource).Asserter = null; } );
+                problems.Entry.ForEach(x => { x.Search=null; ((Condition)x.Resource).Recorder = null; ((Condition)x.Resource).Asserter = null; } );
 
                 paramv = new List<KeyValuePair<string, string>>();
                 paramv.Add(new KeyValuePair<string, string>("patient", id));
                 var procedures = await Search("Procedure", paramv, null, SummaryType.False, null);
-                procedures.Entry.ForEach(x => { ((Procedure)x.Resource).Recorder = null; ((Procedure)x.Resource).Asserter = null; });
-
+                procedures.Entry.ForEach(x => { x.Search=null; ((Procedure)x.Resource).Recorder = null; ((Procedure)x.Resource).Asserter = null; });
 
                 paramv = new List<KeyValuePair<string, string>>();
                 paramv.Add(new KeyValuePair<string, string>("patient", id));
                 var allergies = await Search("AllergyIntolerance", paramv, null, SummaryType.False, null);
-                allergies.Entry.ForEach(x => { ((AllergyIntolerance)x.Resource).Recorder = null; ((AllergyIntolerance)x.Resource).Asserter = null; });
+                allergies.Entry.ForEach(x => { x.Search=null; ((AllergyIntolerance)x.Resource).Recorder = null; ((AllergyIntolerance)x.Resource).Asserter = null; });
 
                 paramv = new List<KeyValuePair<string, string>>();
                 paramv.Add(new KeyValuePair<string, string>("patient", id));
                 var medications = await Search("MedicationRequest", paramv, null, SummaryType.False, null);
-                medications.Entry.ForEach(x => { ((MedicationRequest)x.Resource).Recorder = null; });
+                medications.Entry.ForEach(x => { x.Search=null; ((MedicationRequest)x.Resource).Recorder = null; });
 
                 paramv = new List<KeyValuePair<string, string>>();
                 paramv.Add(new KeyValuePair<string, string>("patient", id));
                 var observations = await Search("Observation", paramv, null, SummaryType.False, null);
+                observations.Entry.ForEach(x => { x.Search=null; });
                
                 var results_observations = observations.Entry.Where((x) => {
                     var o = ((Observation)x.Resource);
@@ -397,7 +397,7 @@ namespace Hl7.Fhir.DemoFileSystemFhirServer
                 {
                     Title = "Results Section",
                     Code = new CodeableConcept("30954-2", "http://loinc.org"),
-                    Entry = results_observations.Entry.Select(x => new ResourceReference() { Reference = "Observation/" + x.Resource.Id }).ToList()
+                    Entry = results_observations.Select(x => new ResourceReference() { Reference = "Observation/" + x.Resource.Id }).ToList()
 
                 };
 
@@ -405,7 +405,7 @@ namespace Hl7.Fhir.DemoFileSystemFhirServer
                 {
                     Title = "Vital Signs Section",
                     Code = new CodeableConcept("8716-3", "http://loinc.org"),
-                    Entry = vitals_observations.Entry.Select(x => new ResourceReference() { Reference = "Observation/" + x.Resource.Id }).ToList()
+                    Entry = vitals_observations.Select(x => new ResourceReference() { Reference = "Observation/" + x.Resource.Id }).ToList()
 
                 };
 
@@ -413,7 +413,7 @@ namespace Hl7.Fhir.DemoFileSystemFhirServer
                 {
                     Title = "Social History Section",
                     Code = new CodeableConcept("29762-2", "http://loinc.org"),
-                    Entry = socialhx_observations.Entry.Select(x => new ResourceReference() { Reference = "Observation/" + x.Resource.Id }).ToList()
+                    Entry = socialhx_observations.Select(x => new ResourceReference() { Reference = "Observation/" + x.Resource.Id }).ToList()
 
                 };
 
