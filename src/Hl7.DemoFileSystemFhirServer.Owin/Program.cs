@@ -19,7 +19,7 @@ namespace Hl7.DemoFileSystemFhirServer
         {
             // Ensure that we grab an available IP port on the local workstation
             // http://stackoverflow.com/questions/9895129/how-do-i-find-an-available-port-before-bind-the-socket-with-the-endpoint
-            string port = "9000";
+            string port = "10000";
 
             using (Socket sock = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp))
             {

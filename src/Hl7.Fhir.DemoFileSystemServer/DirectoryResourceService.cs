@@ -13,6 +13,7 @@ using Hl7.Fhir.Language.Debugging;
 using System.Net;
 using Hl7.Fhir.Specification.Source;
 using Hl7.Fhir.Specification.Terminology;
+using System.Net.Http.Headers;
 
 namespace Hl7.Fhir.DemoFileSystemFhirServer
 {
@@ -334,7 +335,32 @@ namespace Hl7.Fhir.DemoFileSystemFhirServer
                 paramv = new List<KeyValuePair<string, string>>();
                 paramv.Add(new KeyValuePair<string, string>("patient", id));
                 var medications = await Search("MedicationRequest", paramv, null, SummaryType.False, null);
-                medications.Entry.ForEach(x => { x.Search=null; ((MedicationRequest)x.Resource).Recorder = null; });
+
+                List<string> requesters = new List<string>();
+                medications.Entry.ForEach(x => { 
+                    x.Search=null; 
+                    ((MedicationRequest)x.Resource).Recorder = null;
+                    var r = ((MedicationRequest)x.Resource).Requester.Reference;
+                    if(!requesters.Contains(r))
+                            requesters.Add(r);
+                });
+
+                List<Bundle.EntryComponent> rrequesters = new List<Bundle.EntryComponent>();
+                foreach(var r in requesters)
+                {
+                    if(r == null)
+                        continue;
+
+                    string[] p = r.Split('/');
+                    paramv = new List<KeyValuePair<string, string>>();
+                    paramv.Add(new KeyValuePair<string, string>("_id", p[1]));
+
+                    var rr = await Search(p[0], paramv, null, SummaryType.False, null);
+                    rrequesters.AddRange(rr.Entry);
+
+                    rr.Entry.ForEach((x) => { x.Search=null; });
+                }
+
 
                 paramv = new List<KeyValuePair<string, string>>();
                 paramv.Add(new KeyValuePair<string, string>("patient", id));
@@ -365,15 +391,16 @@ namespace Hl7.Fhir.DemoFileSystemFhirServer
                 {
                     Title = "Active Problems",
                     Code = new CodeableConcept("11450-4", "http://loinc.org"),
-                    Entry = problems.Entry.Select(x => new ResourceReference() { Reference = "Condition/" + x.Resource.Id }).ToList()
-
+                    Entry = problems.Entry.Select(x => new ResourceReference() { Reference = "Condition/" + x.Resource.Id + "/_version/" + x.Resource.Meta.VersionId }).ToList(),
                 };
+                if (!problems_section.Entry.Any())
+                    problems_section.EmptyReason = new CodeableConcept() { Text = "Not Present" };
 
                 var procedures_section = new Composition.SectionComponent()
                 {
                     Title = "History of Procedures Section",
                     Code = new CodeableConcept("47519-4", "http://loinc.org"),
-                    Entry = procedures.Entry.Select(x => new ResourceReference() { Reference = "Procedure/" + x.Resource.Id }).ToList()
+                    Entry = procedures.Entry.Select(x => new ResourceReference() { Reference = "Procedure/" + x.Resource.Id + "/_version/" + x.Resource.Meta.VersionId }).ToList()
 
                 };
           
@@ -381,23 +408,28 @@ namespace Hl7.Fhir.DemoFileSystemFhirServer
                 {
                     Title = "Allergies and Intolerances",
                     Code = new CodeableConcept("48765-2", "http://loinc.org"),
-                    Entry = allergies.Entry.Select(x => new ResourceReference() { Reference = "AllergyIntolerance/" + x.Resource.Id }).ToList()
+                    Entry = allergies.Entry.Select(x => new ResourceReference() { Reference = "AllergyIntolerance/" + x.Resource.Id + "/_version/" + x.Resource.Meta.VersionId }).ToList()
 
                 };
+                if (!allergies_section.Entry.Any())
+                    allergies_section.EmptyReason = new CodeableConcept() { Text = "Not Present" };
 
                 var medications_section = new Composition.SectionComponent()
                 {
                     Title = "Medication Summary section",
                     Code = new CodeableConcept("10160-0", "http://loinc.org"),
-                    Entry = medications.Entry.Select(x => new ResourceReference() { Reference = "MedicationRequest/" + x.Resource.Id }).ToList()
+                    Entry = medications.Entry.Select(x => new ResourceReference() { Reference = "MedicationRequest/" + x.Resource.Id + "/_version/" + x.Resource.Meta.VersionId }).ToList()
 
                 };
+                if (!medications_section.Entry.Any())
+                    medications_section.EmptyReason = new CodeableConcept() { Text = "Not Present" };
+
 
                 var results_section = new Composition.SectionComponent()
                 {
                     Title = "Results Section",
                     Code = new CodeableConcept("30954-2", "http://loinc.org"),
-                    Entry = results_observations.Select(x => new ResourceReference() { Reference = "Observation/" + x.Resource.Id }).ToList()
+                    Entry = results_observations.Select(x => new ResourceReference() { Reference = "Observation/" + x.Resource.Id + "/_version/" + x.Resource.Meta.VersionId }).ToList()
 
                 };
 
@@ -405,7 +437,7 @@ namespace Hl7.Fhir.DemoFileSystemFhirServer
                 {
                     Title = "Vital Signs Section",
                     Code = new CodeableConcept("8716-3", "http://loinc.org"),
-                    Entry = vitals_observations.Select(x => new ResourceReference() { Reference = "Observation/" + x.Resource.Id }).ToList()
+                    Entry = vitals_observations.Select(x => new ResourceReference() { Reference = "Observation/" + x.Resource.Id + "/_version/" + x.Resource.Meta.VersionId }).ToList()
 
                 };
 
@@ -413,7 +445,7 @@ namespace Hl7.Fhir.DemoFileSystemFhirServer
                 {
                     Title = "Social History Section",
                     Code = new CodeableConcept("29762-2", "http://loinc.org"),
-                    Entry = socialhx_observations.Select(x => new ResourceReference() { Reference = "Observation/" + x.Resource.Id }).ToList()
+                    Entry = socialhx_observations.Select(x => new ResourceReference() { Reference = "Observation/" + x.Resource.Id + "/_version/" + x.Resource.Meta.VersionId  }).ToList()
 
                 };
 
@@ -422,7 +454,7 @@ namespace Hl7.Fhir.DemoFileSystemFhirServer
                     Id = System.Guid.NewGuid().ToString(),
                     Type = new CodeableConcept("60591-5", "http://loinc.org"), 
                     Status = CompositionStatus.Final,
-                    Text = new Narrative("<p>AUPS</p>"),
+                    Text = new Narrative("<div xmlns='http://www.w3.org/1999/xhtml'><p>patient summary</p></div>"),
                     DateElement =  new FhirDateTime(DateTimeOffset.Now),
                     Title = "AU Patient Summary",
                     Attester = new List<Composition.AttesterComponent>()
@@ -434,8 +466,9 @@ namespace Hl7.Fhir.DemoFileSystemFhirServer
                             Party = new ResourceReference("Patient/" + patient.Id)
                         }
                     },
-                    Section = new List<Composition.SectionComponent>() {
-                       
+                    Subject = new ResourceReference("Patient/" + patient.Id),
+                    Author = new List<ResourceReference>() { new ResourceReference("Patient/" + patient.Id) },
+                    Section = new List<Composition.SectionComponent>() {                   
                     }
           
                 };
@@ -444,8 +477,8 @@ namespace Hl7.Fhir.DemoFileSystemFhirServer
                 if (problems.Entry.Any())
                     c.Section.Add(problems_section);
 
-                if (procedures.Entry.Any())
-                    c.Section.Add(procedures_section);
+                //if (procedures.Entry.Any())
+                //    c.Section.Add(procedures_section);
 
                 if (allergies.Entry.Any())
                     c.Section.Add(allergies_section);
@@ -453,21 +486,24 @@ namespace Hl7.Fhir.DemoFileSystemFhirServer
                 if (medications.Entry.Any())
                     c.Section.Add(medications_section);
 
-                if (results_observations.Any())
-                    c.Section.Add(results_section);
+                //if (results_observations.Any())
+                //    c.Section.Add(results_section);
 
-                if (vitals_observations.Any())
-                    c.Section.Add(vitals_section);
+                //if (vitals_observations.Any())
+                //    c.Section.Add(vitals_section);
 
-                if (socialhx_observations.Any())
-                    c.Section.Add(socialhx_section);
+                //if (socialhx_observations.Any())
+                //    c.Section.Add(socialhx_section);
 
-
-                b.Entry.Add(new Bundle.EntryComponent() { FullUrl="uuid:" + c.Id, Resource =  c });
+                b.Type = Bundle.BundleType.Document;
+                b.Entry.Add(new Bundle.EntryComponent() { FullUrl="http://localhost:10000/Composition/" + c.Id, Resource =  c });
                 b.Entry.Add(new Bundle.EntryComponent() { Resource =  patient });
                 b.Entry.AddRange(problems.Entry);
                 b.Entry.AddRange(allergies.Entry);
                 b.Entry.AddRange(medications.Entry);
+
+                if(rrequesters.Any())
+                    b.Entry.AddRange(rrequesters);
 
                 return b;
             }
